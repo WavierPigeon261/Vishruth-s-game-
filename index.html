@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Army Builder — Scaled Enemies</title>
+<style>
+body{margin:0;font-family:sans-serif;background:#111;color:#eee;}
+header{position:sticky;top:0;background:#222;padding:12px;text-align:center;font-size:18px;}
+.gain-row{display:flex;justify-content:center;gap:14px;background:#1b1b1b;padding:16px 0;border-bottom:4px solid #333;}
+.gain-row button{flex:0 0 140px;padding:14px;font-size:16px;font-weight:bold;border:none;border-radius:10px;background:#3b7bd1;color:#fff;cursor:pointer;}
+.gain-row button:hover{background:#5991e0;}
+.action-row{display:flex;justify-content:center;gap:30px;background:#181818;padding:20px 0;border-top:4px solid #333;}
+.action-row button{flex:0 0 160px;padding:16px;font-size:18px;font-weight:bold;border:none;border-radius:12px;background:#d14e3b;color:#fff;cursor:pointer;}
+.action-row button:hover{background:#e06a57;}
+section{padding:20px;text-align:center;}
+.troops{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;}
+.card{background:#222;padding:12px;border-radius:10px;min-width:150px;}
+#enemyPanel{max-width:600px;margin:0 auto;background:#222;padding:20px;border-radius:10px;text-align:left;}
+.enemy-card{background:#333;padding:12px;margin:8px;border-radius:8px;cursor:pointer;}
+.enemy-card:hover{background:#444;}
+</style>
+</head>
+<body>
+
+<header>
+  <strong>Resources:</strong>
+  Wood: <span id="wood">0</span> |
+  Ore: <span id="ore">0</span> |
+  Food: <span id="food">0</span>
+</header>
+
+<div class="gain-row">
+  <button onclick="gain('wood')">Gain Wood</button>
+  <button onclick="gain('ore')">Gain Ore</button>
+  <button onclick="gain('food')">Gain Food</button>
+</div>
+
+<div class="action-row">
+  <button id="showRecruit">Recruit</button>
+  <button id="showConquest">Conquest</button>
+</div>
+
+<section id="recruitSection" style="display:none;">
+  <h2>Recruit Troops</h2>
+  <div class="troops" id="troopCards"></div>
+</section>
+
+<section id="conquestSection" style="display:none;">
+  <div id="enemyPanel"></div>
+</section>
+
+<script>
+const resources={wood:100000,ore:100000,food:100000};
+const troops={
+  warrior:{base:{wood:20,ore:10},cost:{wood:20,ore:10},count:0,hp:3,dps:5},
+  archer:{ base:{wood:15,ore:5,food:10},cost:{wood:15,ore:5,food:10},count:0,hp:7,dps:7},
+  knight:{ base:{wood:30,ore:20,food:15},cost:{wood:30,ore:20,food:15},count:0,hp:4,dps:8},
+  mage:{   base:{wood:10,ore:25,food:30},cost:{wood:10,ore:25,food:30},count:0,hp:2,dps:7}
+};
+const costIncrease=0.10;
+
+// Stage definitions with scaling multipliers
+const stages = [
+  {name:"Weak", count:7, min:1, max:3, scale:1},
+  {name:"Medium", count:5, min:2, max:5, scale:1.5},
+  {name:"Hard", count:3, min:7, max:8, scale:2},
+  {name:"Impossible", count:1, min:11, max:13, scale:3}
+];
+
+let currentStage = 0;
+let currentEnemies = [];
+
+// Resource functions
+function updateResources(){for(const r in resources) document.getElementById(r).textContent=resources[r];}
+function gain(r){resources[r]++;updateResources();}
+
+// Recruit
+function recruit(type){
+  const t=troops[type];
+  for(const k in t.cost) if(resources[k]<t.cost[k]){alert("Need more "+k);return;}
+  for(const k in t.cost) resources[k]-=t.cost[k];
+  t.count++;
+  for(const k in t.cost) t.cost[k]=Math.ceil(t.cost[k]*(1+costIncrease));
+  updateResources();renderTroops();
+}
+
+function renderTroops(){
+  const div=document.getElementById("troopCards"); div.innerHTML="";
+  for(const t in troops){
+    const tr=troops[t];
+    const cost=Object.entries(tr.cost).map(([k,v])=>`${v} ${k}`).join(", ");
+    const card=document.createElement("div"); card.className="card";
+    card.innerHTML=`<b>${t[0].toUpperCase()+t.slice(1)}</b><br>Cost: ${cost}<br>Owned: ${tr.count}<br>
+      <div>HP:${tr.hp} | DPS:${tr.dps}</div>
+      <button onclick="recruit('${t}')">Recruit</button>`;
+    div.appendChild(card);
+  }
+}
+
+// Calculate totals
+function totalStats(side){
+  let h=0,d=0;
+  for(const t in side){
+    if(!side[t].count) continue;
+    h+=side[t].hp*side[t].count;
+    d+=side[t].dps*side[t].count;
+  }
+  return {h,d};
+}
+
+// Generate enemies for current stage
+function generateStageEnemies(){
+  currentEnemies = [];
+  const stage = stages[currentStage];
+  for(let i=0;i<stage.count;i++){
+    const enemy = {defeated:false};
+    enemy.name = stage.name + " Enemy " + (i+1);
+    for(const t in troops){
+      const count = Math.floor(Math.random()*(stage.max-stage.min+1))+stage.min;
+      // scale HP and DPS
+      enemy[t] = {
+        count: count,
+        hp: Math.ceil(troops[t].hp * stage.scale),
+        dps: Math.ceil(troops[t].dps * stage.scale)
+      };
+    }
+    const stats = totalStats(enemy);
+    let totalPower = stats.h + stats.d;
+    enemy.reward = { wood: Math.ceil(totalPower*2), ore: Math.ceil(totalPower*2), food: Math.ceil(totalPower*2) };
+    currentEnemies.push(enemy);
+  }
+}
+
+// Show enemy list
+function showEnemySelection(){
+  const enemyPanel=document.getElementById("enemyPanel");
+  enemyPanel.innerHTML="";
+  currentEnemies.forEach(enemy=>{
+    const stats = totalStats(enemy);
+    const card=document.createElement("div"); card.className="enemy-card";
+    card.style.opacity = enemy.defeated ? "0.5" : "1";
+    card.innerHTML=`<b>${enemy.name}</b><br>
+      Troops:<ul>${
+        Object.entries(enemy)
+        .filter(([k]) => !["name","defeated","reward"].includes(k))
+        .map(([k,v])=>`<li>${k}: ${v.count} (HP:${v.hp}, DPS:${v.dps})</li>`).join("")
+      }</ul>
+      Total Health: ${stats.h}, DPS: ${stats.d}`;
+    card.onclick = () => battle(enemy, enemy.name);
+    enemyPanel.appendChild(card);
+  });
+}
+
+// Stage progression
+function checkStageClear(){
+  if(currentEnemies.every(e=>e.defeated)){
+    currentStage++;
+    if(currentStage < stages.length){
+      alert(`Stage cleared! Next stage: ${stages[currentStage].name}`);
+      generateStageEnemies();
+    } else {
+      alert("Congratulations! All stages defeated!");
+      currentEnemies = [];
+    }
+    showEnemySelection();
+  }
+}
+
+// Battle
+function battle(enemy,name){
+  if(enemy.defeated){
+    alert(`You already defeated ${name}. No resources left.`);
+    return;
+  }
+  let win = true;
+  for(const t in troops) if(troops[t].count < enemy[t].count){ win = false; break; }
+  const loss = win ? 0.1 : 0.3;
+  for(const t in troops) troops[t].count = Math.max(0, Math.floor(troops[t].count*(1-loss)));
+
+  if(win){
+    for(const r in enemy.reward) resources[r]+=enemy.reward[r];
+    enemy.defeated = true;
+    alert(`Victory against ${name}! Rewards: Wood ${enemy.reward.wood}, Ore ${enemy.reward.ore}, Food ${enemy.reward.food}\nLost 10% of troops.`);
+  } else {
+    alert(`Defeat against ${name}! Lost 30% of troops.`);
+  }
+  updateResources();
+  showEnemySelection();
+  checkStageClear();
+}
+
+// Toggle sections
+document.getElementById("showRecruit").onclick=()=>{
+  document.getElementById("recruitSection").style.display="block";
+  document.getElementById("conquestSection").style.display="none";
+  renderTroops();
+};
+document.getElementById("showConquest").onclick=()=>{
+  if(currentEnemies.length===0 && currentStage<stages.length) generateStageEnemies();
+  document.getElementById("recruitSection").style.display="none";
+  document.getElementById("conquestSection").style.display="block";
+  showEnemySelection();
+};
+
+updateResources();
+</script>
+</body>
+</html>
